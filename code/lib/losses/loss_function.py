@@ -13,8 +13,9 @@ class Hierarchical_Task_Learning:
         self.term2index = {term:self.index2term.index(term) for term in self.index2term}  #term2index
         self.stat_epoch_nums = stat_epoch_nums
         self.past_losses=[]
-        self.loss_graph = {'seg_loss':[],
+        self.loss_graph = {
                            'size2d_loss':[], 
+                        #    'seg_loss':[],
                            'offset2d_loss':[],
                            'offset3d_loss':['size2d_loss','offset2d_loss'], 
                            'size3d_loss':['size2d_loss','offset2d_loss'], 
@@ -36,6 +37,7 @@ class Hierarchical_Task_Learning:
             mean_diff = (past_loss[:-2]-past_loss[2:]).mean(0)
             if not hasattr(self, 'init_diff'):
                 self.init_diff = mean_diff
+                self.init_diff[self.init_diff==0]=1
             c_weights = 1-(mean_diff/self.init_diff).relu().unsqueeze(0)
             
             time_value = min(((epoch-5)/(T-5)),1.0)
@@ -62,12 +64,12 @@ class GupnetLoss(nn.Module):
 
     def forward(self, preds, targets, task_uncertainties=None):
 
-        seg_loss = self.compute_segmentation_loss(preds, targets)
+        # seg_loss = self.compute_segmentation_loss(preds, targets)
         bbox2d_loss = self.compute_bbox2d_loss(preds, targets)
         bbox3d_loss = self.compute_bbox3d_loss(preds, targets)
         
-        loss = seg_loss + bbox2d_loss + bbox3d_loss
-        
+        # loss = seg_loss + bbox2d_loss + bbox3d_loss
+        loss =  bbox2d_loss + bbox3d_loss
         return loss, self.stat
 
 
@@ -135,6 +137,11 @@ class GupnetLoss(nn.Module):
 
 
 ### ======================  auxiliary functions  =======================
+def extract_input_from_tensor_testing(input,ind,mask):
+    input = _transpose_and_gather_feat(input, ind)  # B*C*H*W --> B*K*C
+    bool_mask2=torch.unsqueeze(mask,2).expand(-1,-1,5).type(torch.bool)
+    invert_mask=~bool_mask2
+    return torch.masked_fill(input,invert_mask,0).view(-1,5)
 
 def extract_input_from_tensor(input, ind, mask):
     input = _transpose_and_gather_feat(input, ind)  # B*C*H*W --> B*K*C

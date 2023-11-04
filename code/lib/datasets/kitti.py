@@ -12,6 +12,7 @@ from lib.datasets.utils import draw_umich_gaussian
 from lib.datasets.utils import get_angle_from_box3d,check_range
 from lib.datasets.kitti_utils import get_objects_from_label
 from lib.datasets.kitti_utils import Calibration
+from lib.datasets.kitti_utils import compute_projection_2dbox
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
 from lib.datasets.kitti_utils import compute_box_3d
@@ -20,10 +21,13 @@ import pdb
 class KITTI(data.Dataset):
     def __init__(self, root_dir, split, cfg):
         # basic configuration
-        self.num_classes = 3
+        # self.num_classes = 3
+        self.num_classes =1
         self.max_objs = 50
-        self.class_name = ['Pedestrian', 'Car', 'Cyclist']
-        self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
+        # self.class_name = ['Pedestrian', 'Car', 'Cyclist']
+        self.class_name =['Car']
+        # self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
+        self.cls2id = {'Car': 0}
         self.resolution = np.array([1280, 384])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
@@ -37,10 +41,10 @@ class KITTI(data.Dataset):
          'Cyclist': np.array([1.76282397,0.59706367,1.73698127])] 
         ''' 
         ##l,w,h
-        self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
-                                       [1.52563191462 ,1.62856739989, 3.88311640418],
-                                       [1.73698127    ,0.59706367   , 1.76282397   ]])                              
-                              
+        # self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
+        #                                [1.52563191462 ,1.62856739989, 3.88311640418],
+        #                                [1.73698127    ,0.59706367   , 1.76282397   ]])                              
+        self.cls_mean_size = np.array([[1.52563191462 ,1.62856739989, 3.88311640418]])  
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
@@ -55,7 +59,8 @@ class KITTI(data.Dataset):
         self.label_dir = os.path.join(self.data_dir, 'label_2')
 
         # data augmentation configuration
-        self.data_augmentation = True if split in ['train', 'trainval'] else False
+        # self.data_augmentation = True if split in ['train', 'trainval'] else False
+        self.data_augmentation =False
         self.random_flip = cfg['random_flip']
         self.random_crop = cfg['random_crop']
         self.scale = cfg['scale']
@@ -111,11 +116,12 @@ class KITTI(data.Dataset):
                 center[1] += img_size[1] * np.clip(np.random.randn() * self.shift, -2 * self.shift, 2 * self.shift)
 
         # add affine transformation for 2d images.
-        trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
-        img = img.transform(tuple(self.resolution.tolist()),
-                            method=Image.AFFINE,
-                            data=tuple(trans_inv.reshape(-1).tolist()),
-                            resample=Image.BILINEAR)
+        # trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
+        # img = img.transform(tuple(self.resolution.tolist()),
+        #                     method=Image.AFFINE,
+        #                     data=tuple(trans_inv.reshape(-1).tolist()),
+        #                     resample=Image.BILINEAR)
+        img=img.resize(self.resolution)
         coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)                   
         # image encoding
         img = np.array(img).astype(np.float32) / 255.0
@@ -152,6 +158,8 @@ class KITTI(data.Dataset):
             indices = np.zeros((self.max_objs), dtype=np.int64)
             mask_2d = np.zeros((self.max_objs), dtype=np.uint8)
             mask_3d = np.zeros((self.max_objs), dtype=np.uint8)
+            center_set =np.zeros((self.max_objs,2),dtype=np.float32)
+            project_2d_box = np.zeros((self.max_objs,4), dtype = np.int64)
             object_num = len(objects) if len(objects) < self.max_objs else self.max_objs
             for i in range(object_num):
                 # filter objects by writelist
@@ -165,8 +173,8 @@ class KITTI(data.Dataset):
                 # process 2d bbox & get 2d center
                 bbox_2d = objects[i].box2d.copy()
                 # add affine transformation for 2d boxes.
-                bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
-                bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
+                # bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
+                # bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
                 # modify the 2d bbox according to pre-compute downsample ratio
                 bbox_2d[:] /= self.downsample
     
@@ -176,9 +184,9 @@ class KITTI(data.Dataset):
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
-                center_3d = affine_transform(center_3d.reshape(-1), trans)
+                # center_3d = affine_transform(center_3d.reshape(-1), trans)
                 center_3d /= self.downsample      
-            
+                center_set[i]=center_3d #new add that center data can be preserve
                 # generate the center of gaussian heatmap [optional: 3d center or 2d center]
                 center_heatmap = center_3d.astype(np.int32) if self.use_3d_center else center_2d.astype(np.int32)
                 if center_heatmap[0] < 0 or center_heatmap[0] >= features_size[0]: continue
@@ -211,6 +219,9 @@ class KITTI(data.Dataset):
                 if heading_angle > np.pi:  heading_angle -= 2 * np.pi  # check range
                 if heading_angle < -np.pi: heading_angle += 2 * np.pi
                 heading_bin[i], heading_res[i] = angle2class(heading_angle)
+
+                maxnumpy= compute_projection_2dbox(objects[i].h, objects[i].w, objects[i].l, *objects[i].pos, objects[i].ry) #計算3d project 2d bounding box
+                project_2d_box[i] =maxnumpy
     
                 # encoding 3d offset & size_3d
                 offset_3d[i] = center_3d - center_heatmap
@@ -231,7 +242,9 @@ class KITTI(data.Dataset):
                    'heading_bin': heading_bin,
                    'heading_res': heading_res,
                    'cls_ids': cls_ids,
-                   'mask_2d': mask_2d} 
+                   'mask_2d': mask_2d,
+                   'project_2d_box': project_2d_box, #for projection loss
+                   'center_set':center_set} #for projection loss
         else:
             targets = {}
         # collect return data

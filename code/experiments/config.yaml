@@ -2,12 +2,13 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../../Dataset/3d-detection/'
-  batch_size: 32
+  root_dir: 'Dataset/'
+  batch_size: 8
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+  # writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['Car']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -30,12 +31,13 @@ lr_scheduler:
 
 trainer:
   max_epoch: 140
-  eval_frequency: 10 # evaluation interval (in epoch)
-  save_frequency: 10 # checkpoint save interval (in epoch)
+  eval_frequency: 20 # evaluation interval (in epoch)
+  save_frequency: 20 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
-  log_dir: 'log'
+  log_dir: 'log/'
+  save_dir : "2dgt_noaffine/"
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter
-  #resume_model: '...'  
-  
+  resume_model: 'log/2dgt_noaffine/checkpoint_epoch_80.pth'  
+  save_dir: "2dgt_noaffine/"

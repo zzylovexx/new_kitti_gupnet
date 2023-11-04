@@ -8,7 +8,7 @@ from lib.backbones.dlaup import DLAUp
 from lib.backbones.dlaup import DLAUpv2
 
 import torchvision.ops.roi_align as roi_align
-from lib.losses.loss_function import extract_input_from_tensor
+from lib.losses.loss_function import extract_input_from_tensor,extract_input_from_tensor_testing
 from lib.helpers.decode_helper import _topk,_nms
 
 def weights_init_xavier(m):
@@ -59,7 +59,7 @@ class GUPNet(nn.Module):
         # initialize the head of pipeline, according to heads setting.
         self.heatmap = nn.Sequential(nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
                                      nn.ReLU(inplace=True),
-                                     nn.Conv2d(self.head_conv, 3, kernel_size=1, stride=1, padding=0, bias=True))
+                                     nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
         self.offset_2d = nn.Sequential(nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
                                      nn.ReLU(inplace=True),
                                      nn.Conv2d(self.head_conv, 2, kernel_size=1, stride=1, padding=0, bias=True))
@@ -94,7 +94,7 @@ class GUPNet(nn.Module):
         self.size_3d.apply(weights_init_xavier)
         self.heading.apply(weights_init_xavier)
 
-    def forward(self, input, coord_ranges,calibs, targets=None, K=50, mode='train'):
+    def forward(self, input, coord_ranges,calibs, targets=None, K=50, mode='train',use_2dgt=True):
         device_id = input.device
         BATCH_SIZE = input.size(0)
 
@@ -107,28 +107,61 @@ class GUPNet(nn.Module):
             ret[head] = self.__getattr__(head)(feat)
         '''
         ret = {}
-        ret['heatmap']=self.heatmap(feat)
-        ret['offset_2d']=self.offset_2d(feat)
-        ret['size_2d']=self.size_2d(feat)
+        # ret['heatmap']=self.heatmap(feat) //heat  map use model to predict
+        ret['heatmap']=targets['heatmap'] #heat map use 2d gt
+        H,W= ret['heatmap'].size(2),ret['heatmap'].size(3)
+        # ret['offset_2d']=self.offset_2d(feat)
+        # ret['size_2d']=self.size_2d(feat)
         #two stage
+        zero_size_map = torch.zeros(BATCH_SIZE,
+                                    H * W,
+                                    2, #channel
+                                    device='cuda')  # 創見一為 0 map
+        zero_offset_map = torch.zeros(BATCH_SIZE,
+                                    H*W,
+                                    2, #channel
+                                    device='cuda')
         assert(mode in ['train','val','test'])
         if mode=='train':   #extract train structure in the train (only) and the val mode
             inds,cls_ids = targets['indices'],targets['cls_ids']
             masks = targets['mask_2d']
         else:    #extract test structure in the test (only) and the val mode
-            inds,cls_ids = _topk(_nms(torch.clamp(ret['heatmap'].sigmoid(), min=1e-4, max=1 - 1e-4)), K=K)[1:3]
-            masks = torch.ones(inds.size()).type(torch.uint8).to(device_id)
-        ret.update(self.get_roi_feat(feat,inds,masks,ret,calibs,coord_ranges,cls_ids))
+            # inds,cls_ids = _topk(_nms(torch.clamp(ret['heatmap'].sigmoid(), min=1e-4, max=1 - 1e-4)), K=K)[1:3]
+            # masks = torch.ones(inds.size()).type(torch.uint8).to(device_id)
+            inds, cls_ids = targets['indices'], targets['cls_ids']
+            masks = targets['mask_2d']
+        B, K = inds.size()
+        #inds.unsqueeze(2).expand(B, K, 2) (B, K)->(B, K, 2) index 的值為 0-> 30720(H*W)
+        zero_size_map.scatter_(1, inds.unsqueeze(2).expand(B, K, 2),targets['size_2d']) #對(8, 30720, 2)去填targets['size_2d']
+
+        zero_size_map = zero_size_map.view(BATCH_SIZE, H, W, 2) #->(B,H,W,2)
+        zero_size_map = zero_size_map.permute(0, 3, 1, 2).contiguous() #(B,H,W,2) ->(B,C,H,W) origin shape
+        ret['size_2d']=zero_size_map
+
+        zero_offset_map.scatter_(1, inds.unsqueeze(2).expand(B, K, 2),targets['offset_2d'])
+        zero_offset_map = zero_offset_map.view(BATCH_SIZE,H ,W ,2)
+        zero_offset_map = zero_offset_map.permute(0, 3, 1, 2).contiguous()
+        ret['offset_2d'] = zero_offset_map
+        ret['indices']=inds
+        ret['mask'] = masks
+        ret.update(self.get_roi_feat(feat,inds,masks,ret,calibs,coord_ranges,cls_ids,use_2dgt,mode))
         return ret
 
-    def get_roi_feat_by_mask(self,feat,box2d_maps,inds,mask,calibs,coord_ranges,cls_ids):
+    def get_roi_feat_by_mask(self,feat,box2d_maps,inds,mask,calibs,coord_ranges,cls_ids,use_2dgt,mode):
         BATCH_SIZE,_,HEIGHT,WIDE = feat.size()
         device_id = feat.device
-        num_masked_bin = mask.sum()
+        if use_2dgt and mode == "test":
+            num_masked_bin=mask.shape[0]*mask.shape[1]
+        else:
+            num_masked_bin = mask.sum() 
         res = {}
         if num_masked_bin!=0:
             #get box2d of each roi region
-            box2d_masked = extract_input_from_tensor(box2d_maps,inds,mask)
+            if use_2dgt and mode == "test":
+                box2d_masked=extract_input_from_tensor_testing(box2d_maps,inds,mask)
+            else:
+                box2d_masked = extract_input_from_tensor(box2d_maps,inds,mask)
+            # box2d_masked = extract_input_from_tensor(box2d_maps,inds,mask)
             #get roi feature
             roi_feature_masked = roi_align(feat,box2d_masked,[7,7])
             #get coord range of each roi
@@ -151,9 +184,14 @@ class GUPNet(nn.Module):
 
             #concatenate coord maps with feature maps in the channel dim
             cls_hots = torch.zeros(num_masked_bin,self.cls_num).to(device_id)
-            cls_hots[torch.arange(num_masked_bin).to(device_id),cls_ids[mask].long()] = 1.0
+            # cls_hots[torch.arange(num_masked_bin).to(device_id),cls_ids[mask].long()] = 1.0
+            inverse_temp_mask=~mask
+            if use_2dgt and mode =="test":
+                cls_hots[torch.arange(num_masked_bin).to(device_id),torch.masked_fill(cls_ids,inverse_temp_mask,0).view(-1).long()] = 1.0
+            else :
+                cls_hots[torch.arange(num_masked_bin).to(device_id), cls_ids[mask].long()] = 1.0
             
-            roi_feature_masked = torch.cat([roi_feature_masked,coord_maps,cls_hots.unsqueeze(-1).unsqueeze(-1).repeat([1,1,7,7])],1)
+            roi_feature_masked = torch.cat([roi_feature_masked,coord_maps,cls_hots.unsqueeze(-1).unsqueeze(-1).repeat([1,1,7,7])],1).float()
  
             #compute heights of projected objects
             box2d_height = torch.clamp(box2d_masked[:,4]-box2d_masked[:,2],min=1.0)
@@ -161,8 +199,12 @@ class GUPNet(nn.Module):
             size3d_offset = self.size_3d(roi_feature_masked)[:,:,0,0]
             h3d_log_std = size3d_offset[:,3:4]
             size3d_offset = size3d_offset[:,:3] 
+            if use_2dgt and mode =="test":
+                size_3d = (self.mean_size[torch.masked_fill(cls_ids,inverse_temp_mask,0).view(-1).long()]+size3d_offset)
+            else :
+                size_3d = (self.mean_size[cls_ids[mask].long()]+size3d_offset)
 
-            size_3d = (self.mean_size[cls_ids[mask].long()]+size3d_offset)
+            # size_3d = (self.mean_size[cls_ids[mask].long()]+size3d_offset)
             depth_geo = size_3d[:,0]/box2d_height.squeeze()*roi_calibs[:,0,0]
             
             depth_net_out = self.depth(roi_feature_masked)[:,:,0,0]
@@ -187,7 +229,7 @@ class GUPNet(nn.Module):
             res['h3d_log_variance'] = torch.zeros([1,1]).to(device_id)
         return res
 
-    def get_roi_feat(self,feat,inds,mask,ret,calibs,coord_ranges,cls_ids):
+    def get_roi_feat(self,feat,inds,mask,ret,calibs,coord_ranges,cls_ids,use_2dgt,mode):
         BATCH_SIZE,_,HEIGHT,WIDE = feat.size()
         device_id = feat.device
         coord_map = torch.cat([torch.arange(WIDE).unsqueeze(0).repeat([HEIGHT,1]).unsqueeze(0),\
@@ -196,7 +238,7 @@ class GUPNet(nn.Module):
         box2d_maps = torch.cat([box2d_centre-ret['size_2d']/2,box2d_centre+ret['size_2d']/2],1)
         box2d_maps = torch.cat([torch.arange(BATCH_SIZE).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat([1,1,HEIGHT,WIDE]).type(torch.float).to(device_id),box2d_maps],1)
         #box2d_maps is box2d in each bin
-        res = self.get_roi_feat_by_mask(feat,box2d_maps,inds,mask,calibs,coord_ranges,cls_ids)
+        res = self.get_roi_feat_by_mask(feat,box2d_maps,inds,mask,calibs,coord_ranges,cls_ids,use_2dgt,mode)
         return res
 
 
