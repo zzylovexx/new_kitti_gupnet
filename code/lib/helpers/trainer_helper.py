@@ -11,6 +11,8 @@ from lib.helpers.save_helper import load_checkpoint
 from lib.losses.loss_function import GupnetLoss,Hierarchical_Task_Learning
 from lib.helpers.decode_helper import extract_dets_from_outputs
 from lib.helpers.decode_helper import decode_detections
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 class Trainer(object):
     def __init__(self,
@@ -34,6 +36,8 @@ class Trainer(object):
         self.epoch = 0
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.class_name = test_loader.dataset.class_name
+        self.save_dir= cfg['trainer']['save_dir']
+        self.writer = SummaryWriter(log_dir = "runs/" + datetime.now().strftime("%Y%m%d-%H%M%S") + "/")
         
         if self.cfg_train.get('resume_model', None):
             assert os.path.exists(self.cfg_train['resume_model'])
@@ -64,7 +68,15 @@ class Trainer(object):
                 log_str += ' %s:%.4f,' %(key[:-4], loss_weights[key])   
             self.logger.info(log_str)                     
             ei_loss = self.train_one_epoch(loss_weights)
-            self.epoch += 1
+             # self.writer.add_scalar('loss/total_loss',ei_loss['total_loss'].item(),epoch)
+            self.writer.add_scalar('loss/seg_loss', ei_loss['seg_loss'].item(), epoch)
+            self.writer.add_scalar('loss/offset2d_loss', ei_loss['offset2d_loss'].item(), epoch)
+            self.writer.add_scalar('loss/size_loss', ei_loss['size2d_loss'].item(), epoch)
+            self.writer.add_scalar('loss/offset3d_loss', ei_loss['offset3d_loss'].item(), epoch)
+            self.writer.add_scalar('loss/depth_loss', ei_loss['depth_loss'].item(), epoch)
+            self.writer.add_scalar('loss/size3d_loss', ei_loss['size3d_loss'].item(), epoch)
+            self.writer.add_scalar('loss/heading_loss', ei_loss['heading_loss'].item(), epoch)
+            self.epoch += 1 
             
             # update learning rate
             if self.warmup_lr_scheduler is not None and epoch < 5:
@@ -78,8 +90,8 @@ class Trainer(object):
 
             # save trained model
             if (self.epoch % self.cfg_train['save_frequency']) == 0:
-                os.makedirs(self.cfg_train['log_dir']+'/checkpoints', exist_ok=True)
-                ckpt_name = os.path.join(self.cfg_train['log_dir']+'/checkpoints', 'checkpoint_epoch_%d' % self.epoch)
+                os.makedirs(self.cfg_train['log_dir']+self.save_dir, exist_ok=True)
+                ckpt_name = os.path.join(self.cfg_train['log_dir']+self.save_dir, 'checkpoint_epoch_%d' % self.epoch)
                 save_checkpoint(get_checkpoint_state(self.model, self.optimizer, self.epoch), ckpt_name, self.logger)
 
         return None
@@ -188,11 +200,11 @@ class Trainer(object):
                 results.update(dets)
                 progress_bar.update()
             progress_bar.close()
-        self.save_results(results)
+        self.save_results(results, self.save_dir)
            
                 
-    def save_results(self, results, output_dir='./outputs'):
-        output_dir = os.path.join(output_dir, 'data')
+    def save_results(self, results, output_dir):
+        output_dir = os.path.join('outputs_dir',output_dir, 'data')
         os.makedirs(output_dir, exist_ok=True)
 
         for img_id in results.keys():

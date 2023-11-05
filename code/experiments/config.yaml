@@ -2,12 +2,12 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../../Dataset/3d-detection/'
-  batch_size: 32
+  root_dir: 'Dataset/'
+  batch_size: 8
   class_merging: False
   use_dontcare: False
   use_3d_center: True
-  writelist: ['Car','Pedestrian','Cyclist']
+  writelist: ['Car']
   random_flip: 0.5
   random_crop: 0.5
   scale: 0.4
@@ -33,9 +33,12 @@ trainer:
   eval_frequency: 10 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
-  log_dir: 'log'
+  # log_dir: 'log/'
+  log_dir: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/'
+  save_dir: 'origin_noaffine/'
   #resume_model: '...'  
 tester:
   threshold: 0.2  # confidence filter
-  #resume_model: '...'  
+  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_noaffine/checkpoint_epoch_140.pth' 
+  save_dir : 'origin_noaffine/'
   

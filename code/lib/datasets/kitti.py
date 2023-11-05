@@ -22,8 +22,10 @@ class KITTI(data.Dataset):
         # basic configuration
         self.num_classes = 3
         self.max_objs = 50
-        self.class_name = ['Pedestrian', 'Car', 'Cyclist']
-        self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
+        # self.class_name = ['Pedestrian', 'Car', 'Cyclist']
+        self.class_name = ['Car']
+        # self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
+        self.cls2id = {'Car':0}
         self.resolution = np.array([1280, 384])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
@@ -37,10 +39,10 @@ class KITTI(data.Dataset):
          'Cyclist': np.array([1.76282397,0.59706367,1.73698127])] 
         ''' 
         ##l,w,h
-        self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
-                                       [1.52563191462 ,1.62856739989, 3.88311640418],
-                                       [1.73698127    ,0.59706367   , 1.76282397   ]])                              
-                              
+        # self.cls_mean_size = np.array([[1.76255119    ,0.66068622   , 0.84422524   ],
+        #                                [1.52563191462 ,1.62856739989, 3.88311640418],
+        #                                [1.73698127    ,0.59706367   , 1.76282397   ]])                              
+        self.cls_mean_size = np.array([[1.52563191462 ,1.62856739989, 3.88311640418]])       
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
@@ -55,7 +57,8 @@ class KITTI(data.Dataset):
         self.label_dir = os.path.join(self.data_dir, 'label_2')
 
         # data augmentation configuration
-        self.data_augmentation = True if split in ['train', 'trainval'] else False
+        # self.data_augmentation = True if split in ['train', 'trainval'] else False
+        self.data_augmentation = False
         self.random_flip = cfg['random_flip']
         self.random_crop = cfg['random_crop']
         self.scale = cfg['scale']
@@ -111,13 +114,14 @@ class KITTI(data.Dataset):
                 center[1] += img_size[1] * np.clip(np.random.randn() * self.shift, -2 * self.shift, 2 * self.shift)
 
         # add affine transformation for 2d images.
-        trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
-        img = img.transform(tuple(self.resolution.tolist()),
-                            method=Image.AFFINE,
-                            data=tuple(trans_inv.reshape(-1).tolist()),
-                            resample=Image.BILINEAR)
+        # trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
+        # img = img.transform(tuple(self.resolution.tolist()),
+        #                     method=Image.AFFINE,
+        #                     data=tuple(trans_inv.reshape(-1).tolist()),
+        #                     resample=Image.BILINEAR)
         coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)                   
         # image encoding
+        img=img.resize(self.resolution)
         img = np.array(img).astype(np.float32) / 255.0
         img = (img - self.mean) / self.std
         img = img.transpose(2, 0, 1)  # C * H * W
@@ -165,8 +169,8 @@ class KITTI(data.Dataset):
                 # process 2d bbox & get 2d center
                 bbox_2d = objects[i].box2d.copy()
                 # add affine transformation for 2d boxes.
-                bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
-                bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
+                # bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
+                # bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
                 # modify the 2d bbox according to pre-compute downsample ratio
                 bbox_2d[:] /= self.downsample
     
@@ -176,7 +180,7 @@ class KITTI(data.Dataset):
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
-                center_3d = affine_transform(center_3d.reshape(-1), trans)
+                # center_3d = affine_transform(center_3d.reshape(-1), trans)
                 center_3d /= self.downsample      
             
                 # generate the center of gaussian heatmap [optional: 3d center or 2d center]

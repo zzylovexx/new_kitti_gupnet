@@ -57,11 +57,11 @@ class Tester(object):
             progress_bar.update()
 
         # save the result for evaluation.
-        self.save_results(results)
+        self.save_results(results, self.save_dir)
         progress_bar.close()
 
-    def save_results(self, results, output_dir='./outputs'):
-        output_dir = os.path.join(output_dir, 'data')
+    def save_results(self, results, output_dir):
+        output_dir = os.path.join('outputs_dir', output_dir, 'data')
         os.makedirs(output_dir, exist_ok=True)
         for img_id in results.keys():
             out_path = os.path.join(output_dir, '{:06d}.txt'.format(img_id))

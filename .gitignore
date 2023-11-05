@@ -1,0 +1,6 @@
+code/outputs_dir/
+code/kitti-object-eval-python
+*pyc
+code/log
+code/runs
+code/Dataset
