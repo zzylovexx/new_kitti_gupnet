@@ -9,6 +9,24 @@ def get_objects_from_label(label_file):
     objects = [Object3d(line) for line in lines]
     return objects
 
+def compute_projection_2dbox(h, w, l, x, y, z, yaw, camera): #input is h,w,l,x,y,z,yaw and gt h,w,l,x,y,z  
+    """
+    Return : 3xn in cam2 coordinate
+    """
+    R = np.array([  [np.cos(yaw), 0, np.sin(yaw)], 
+                    [0, 1, 0],
+                    [-np.sin(yaw), 0, np.cos(yaw)]]) #(3,3)
+    x_corners = [l/2,l/2,-l/2,-l/2,l/2,l/2,-l/2,-l/2]
+    y_corners = [0,0,0,0,-h,-h,-h,-h] #這種寫法為車子在底部
+    z_corners = [w/2,-w/2,-w/2,w/2,w/2,-w/2,-w/2,w/2] #vstack 為沿著第一個維度疊起來 ()
+    corners_3d_cam2 = np.dot(R, np.vstack([x_corners,y_corners,z_corners])) #np.vstack([x_corners,y_corners,z_corners])->(3,8)
+    corners_3d_cam2 += np.vstack([x, y, z]) #(3,8) + (3,1) broadcast to (3,8) ->(3,8)
+    pts_2d , _=camera.rect_to_img(corners_3d_cam2.T)
+    min_x =int(min(pts_2d[:,0]))
+    min_y=int(min(pts_2d[:,1]))
+    max_x=int(max(pts_2d[:,0]))
+    max_y =int(max(pts_2d[:,1]))
+    return np.array([min_x,min_y,max_x,max_y])
 
 class Object3d(object):
     def __init__(self, line):
@@ -136,15 +154,19 @@ def get_calib_from_file(calib_file):
 
 class Calibration(object):
     def __init__(self, calib_file):
-        if isinstance(calib_file, str):
-            calib = get_calib_from_file(calib_file)
-        else:
-            calib = calib_file
+        # if isinstance(calib_file, str):
+        #     calib = get_calib_from_file(calib_file)
+        # else:
+        #     calib = calib_file
+        self.P2 = np.array([7.215377e+02, 0,              6.095593e+02,     4.4857280e+01,
+                            0,            7.2153770e+02,  1.728540e+02,     2.1637910e-01,
+                            0 ,           0 ,             1.00e+00,         2.7458840e-03])
+        self.P2= self.P2.reshape((3,4))
 
-        self.P2 = calib['P2']  # 3 x 4
-        self.R0 = calib['R0']  # 3 x 3
-        self.V2C = calib['Tr_velo2cam']  # 3 x 4
-        self.C2V = self.inverse_rigid_trans(self.V2C)
+        # self.P2 = calib['P2']  # 3 x 4
+        # self.R0 = calib['R0']  # 3 x 3
+        # self.V2C = calib['Tr_velo2cam']  # 3 x 4
+        # self.C2V = self.inverse_rigid_trans(self.V2C)
 
         # Camera intrinsics and extrinsics
         self.cu = self.P2[0, 2]
@@ -185,7 +207,7 @@ class Calibration(object):
         pts_rect_hom = self.cart_to_hom(pts_rect)
         pts_2d_hom = np.dot(pts_rect_hom, self.P2.T)
         pts_img = (pts_2d_hom[:, 0:2].T / pts_rect_hom[:, 2]).T  # (N, 2)
-        pts_rect_depth = pts_2d_hom[:, 2] - self.P2.T[3, 2]  # depth in rect camera coord
+        pts_rect_depth = pts_2d_hom[:, 2] - self.P2.T[3, 2]  # depth in rect_camera(P0) coord
         return pts_img, pts_rect_depth
 
     def lidar_to_img(self, pts_lidar):
@@ -348,6 +370,7 @@ class Calibration(object):
         new_calib_matrix[2,0:2] = new_calib[1:3]
         new_calib_matrix[3,:] = new_calib[3:6]
         new_calib_matrix[-1,-1] = self.P2[-1,-1]
+        # self.P2 = new_calib_matrix.T #經過affine transform camera projection matrix 改變 
         return new_calib_matrix.T
         #return new_calib_matrix.T       
         #print('{}-->{}'.format(ori_size,tar_size))

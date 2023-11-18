@@ -100,8 +100,8 @@ def extract_dets_from_outputs(outputs, K=50):
 
 def _nms(heatmap, kernel=3):
     padding = (kernel - 1) // 2
-    heatmapmax = nn.functional.max_pool2d(heatmap, (kernel, kernel), stride=1, padding=padding)
-    keep = (heatmapmax == heatmap).float()
+    heatmapmax = nn.functional.max_pool2d(heatmap, (kernel, kernel), stride=1, padding=padding) #(3,3) kernel 內最大的的值
+    keep = (heatmapmax == heatmap).float() #
     return heatmap * keep
 
 

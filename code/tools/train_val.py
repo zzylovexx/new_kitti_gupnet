@@ -33,6 +33,7 @@ def create_logger(log_file):
 
 def main():  
     # load cfg
+    
     assert (os.path.exists(args.config))
     cfg = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
     os.makedirs(cfg['trainer']['log_dir'],exist_ok=True)
@@ -70,4 +71,5 @@ def main():
 
 
 if __name__ == '__main__':
+    os.environ['CUDA_LAUNCH_BLOCKING'] ='1'
     main()

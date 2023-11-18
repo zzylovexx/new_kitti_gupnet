@@ -15,7 +15,7 @@ def build_dataloader(cfg):
                                   batch_size=cfg['batch_size'],
                                   num_workers=2,
                                   worker_init_fn=my_worker_init_fn,
-                                  shuffle=True,
+                                  shuffle=True, #記得改回來
                                   pin_memory=True,
                                   drop_last=False)
         val_set = KITTI(root_dir=cfg['root_dir'], split='val', cfg=cfg)

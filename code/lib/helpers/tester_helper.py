@@ -15,7 +15,7 @@ class Tester(object):
         self.logger = logger
         self.class_name = data_loader.dataset.class_name
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+        self.save_dir = cfg['save_dir']
         if self.cfg.get('resume_model', None):
             load_checkpoint(model = self.model,
                         optimizer = None,
@@ -73,6 +73,7 @@ class Tester(object):
                     f.write(' {:.2f}'.format(results[img_id][i][j]))
                 f.write('\n')
             f.close()
+        print(output_dir)
 
 
 

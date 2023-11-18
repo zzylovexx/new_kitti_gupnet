@@ -29,16 +29,18 @@ lr_scheduler:
   decay_list: [90, 120]
 
 trainer:
-  max_epoch: 140
+  max_epoch: 200
   eval_frequency: 10 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   # log_dir: 'log/'
   log_dir: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/'
-  save_dir: 'origin_noaffine/'
-  #resume_model: '...'  
+  save_dir: 'origin_projection_affine_flip_camera/'
+
+  # resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_loss_affine_flip_depth/checkpoint_epoch_90.pth' 
 tester:
   threshold: 0.2  # confidence filter
-  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_noaffine/checkpoint_epoch_140.pth' 
-  save_dir : 'origin_noaffine/'
+  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_affine_flip_camera/checkpoint_epoch_140.pth' 
+  # resume_model: 'log/origin_1class/checkpoint_epoch_140.pth' 
+  save_dir : 'origin_projection_affine_flip_camera/'
   
