@@ -35,12 +35,12 @@ trainer:
   disp_frequency: 5 # display interval (in batch)
   # log_dir: 'log/'
   log_dir: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/'
-  save_dir: 'origin_projection_affine_flip_camera/'
+  save_dir: 'origin_projection_affine_flip_camera_good/'
 
   # resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_loss_affine_flip_depth/checkpoint_epoch_90.pth' 
 tester:
   threshold: 0.2  # confidence filter
-  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_affine_flip_camera/checkpoint_epoch_140.pth' 
+  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_affine_flip_camera_good/checkpoint_epoch_140.pth' 
   # resume_model: 'log/origin_1class/checkpoint_epoch_140.pth' 
-  save_dir : 'origin_projection_affine_flip_camera/'
+  save_dir : 'origin_projection_affine_flip_camera_good/'
   

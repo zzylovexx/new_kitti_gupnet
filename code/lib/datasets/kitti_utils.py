@@ -154,19 +154,19 @@ def get_calib_from_file(calib_file):
 
 class Calibration(object):
     def __init__(self, calib_file):
-        # if isinstance(calib_file, str):
-        #     calib = get_calib_from_file(calib_file)
-        # else:
-        #     calib = calib_file
-        self.P2 = np.array([7.215377e+02, 0,              6.095593e+02,     4.4857280e+01,
-                            0,            7.2153770e+02,  1.728540e+02,     2.1637910e-01,
-                            0 ,           0 ,             1.00e+00,         2.7458840e-03])
-        self.P2= self.P2.reshape((3,4))
+        if isinstance(calib_file, str):
+            calib = get_calib_from_file(calib_file)
+        else:
+            calib = calib_file
+        # self.P2 = np.array([7.215377e+02, 0,              6.095593e+02,     4.4857280e+01,
+        #                     0,            7.2153770e+02,  1.728540e+02,     2.1637910e-01,
+        #                     0 ,           0 ,             1.00e+00,         2.7458840e-03])
+        # self.P2= self.P2.reshape((3,4))
 
-        # self.P2 = calib['P2']  # 3 x 4
-        # self.R0 = calib['R0']  # 3 x 3
-        # self.V2C = calib['Tr_velo2cam']  # 3 x 4
-        # self.C2V = self.inverse_rigid_trans(self.V2C)
+        self.P2 = calib['P2']  # 3 x 4
+        self.R0 = calib['R0']  # 3 x 3
+        self.V2C = calib['Tr_velo2cam']  # 3 x 4
+        self.C2V = self.inverse_rigid_trans(self.V2C)
 
         # Camera intrinsics and extrinsics
         self.cu = self.P2[0, 2]
