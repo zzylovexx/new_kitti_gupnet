@@ -12,7 +12,7 @@ dataset:
   random_crop: 0.5
   scale: 0.4
   shift: 0.1
-
+  use_2dgt: True
 model:
   type: 'gupnet'
   backbone: 'dla34'
@@ -34,13 +34,14 @@ trainer:
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 5 # display interval (in batch)
   # log_dir: 'log/'
-  log_dir: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/'
-  save_dir: 'origin_projection_affine_flip_camera_good/'
+  log_dir: '/media/chang0731/512ssd/new_kitti_gupnet/kitti_gupnet_checkpoint/'
+  save_dir: 'origin_2dgt_backup/'
 
   # resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_loss_affine_flip_depth/checkpoint_epoch_90.pth' 
 tester:
   threshold: 0.2  # confidence filter
-  resume_model: '/media/chang0731/512ssd/kitti_gupnet_checkpoint/origin_projection_affine_flip_camera_good/checkpoint_epoch_140.pth' 
+  use_2dgt: True
+  resume_model: '/media/chang0731/512ssd/new_kitti_gupnet/kitti_gupnet_checkpoint/origin_2dgt_backup/checkpoint_epoch_200.pth' 
   # resume_model: 'log/origin_1class/checkpoint_epoch_140.pth' 
-  save_dir : 'origin_projection_affine_flip_camera_good/'
-  
+  save_dir : 'origin_2dgt_backup/'
+  # GUPNet/code/outputs_dir/origin_projecion_affine_flip_camera_good_test

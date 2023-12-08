@@ -38,7 +38,7 @@ class Trainer(object):
         self.class_name = test_loader.dataset.class_name
         self.save_dir= cfg['trainer']['save_dir']
         self.writer = SummaryWriter(log_dir = "runs/" + datetime.now().strftime("%Y%m%d-%H%M%S") + "/"+self.save_dir)
-        
+        self.use_2dgt = cfg['dataset']['use_2dgt']
         if self.cfg_train.get('resume_model', None):
             assert os.path.exists(self.cfg_train['resume_model'])
             self.epoch = load_checkpoint(self.model, self.optimizer, self.cfg_train['resume_model'], self.logger, map_location=self.device)
@@ -139,7 +139,7 @@ class Trainer(object):
             # train one batch
             self.optimizer.zero_grad()
             criterion = GupnetLoss(self.epoch)
-            outputs = self.model(inputs,coord_ranges,calibs,targets)
+            outputs = self.model(inputs,coord_ranges,calibs,targets,use_2dgt = self.use_2dgt)
             total_loss, loss_terms = criterion(outputs, targets)
             
             if loss_weights is not None:
@@ -180,16 +180,18 @@ class Trainer(object):
         disp_dict = {}
         progress_bar = tqdm.tqdm(total=len(self.test_loader), leave=True, desc='Evaluation Progress')
         with torch.no_grad():
-            for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.test_loader):
+            for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.test_loader):
                 # load evaluation data and move data to current device.
                 inputs = inputs.to(self.device)
                 calibs = calibs.to(self.device) 
                 coord_ranges = coord_ranges.to(self.device)
+                for key in targets.keys():
+                    targets[key] = targets[key].to(self.device)
     
                 # the outputs of centernet
-                outputs = self.model(inputs,coord_ranges,calibs,K=50,mode='val')
+                outputs = self.model(inputs,coord_ranges,calibs,targets = targets,K=50,mode='test',use_2dgt= self.use_2dgt)
 
-                dets = extract_dets_from_outputs(outputs, K=50)
+                dets = extract_dets_from_outputs(outputs,targets,self.use_2dgt, K=50)
                 dets = dets.detach().cpu().numpy()
                 
                 # get corresponding calibs & transform tensor to numpy

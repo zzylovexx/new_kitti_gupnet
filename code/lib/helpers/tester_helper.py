@@ -15,6 +15,7 @@ class Tester(object):
         self.logger = logger
         self.class_name = data_loader.dataset.class_name
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.use_2dgt = cfg['use_2dgt']
         self.save_dir = cfg['save_dir']
         if self.cfg.get('resume_model', None):
             load_checkpoint(model = self.model,
@@ -32,15 +33,16 @@ class Tester(object):
 
         results = {}
         progress_bar = tqdm.tqdm(total=len(self.data_loader), leave=True, desc='Evaluation Progress')
-        for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.data_loader):
+        for batch_idx, (inputs, calibs, coord_ranges, targets, info) in enumerate(self.data_loader):
             # load evaluation data and move data to current device.
             inputs = inputs.to(self.device)
             calibs = calibs.to(self.device)
             coord_ranges = coord_ranges.to(self.device)
-
+            for key in targets.keys():
+                targets[key] = targets[key].to(self.device)
             # the outputs of centernet
-            outputs = self.model(inputs,coord_ranges,calibs,K=50,mode='test')
-            dets = extract_dets_from_outputs(outputs=outputs, K=50)
+            outputs = self.model(inputs, coord_ranges, calibs,targets, K=50, mode='test', use_2dgt= self.use_2dgt)
+            dets = extract_dets_from_outputs(outputs=outputs, targets = targets, use_2dgt=self.use_2dgt, K=50)
             dets = dets.detach().cpu().numpy()
 
 

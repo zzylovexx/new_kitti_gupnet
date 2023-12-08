@@ -141,6 +141,12 @@ class GupnetLoss(nn.Module):
 
 
 ### ======================  auxiliary functions  =======================
+def extract_input_from_tensor_testing(input,ind,mask):
+    input = _transpose_and_gather_feat(input, ind)  # B*C*H*W --> B*K*C
+    bool_mask2=torch.unsqueeze(mask,2).expand(-1,-1,5).type(torch.bool)
+    invert_mask=~bool_mask2
+    return torch.masked_fill(input,invert_mask,0).view(-1,5)  # B*K*C --> M * C
+
 
 def extract_input_from_tensor(input, ind, mask):
     input = _transpose_and_gather_feat(input, ind)  # B*C*H*W --> B*K*C
