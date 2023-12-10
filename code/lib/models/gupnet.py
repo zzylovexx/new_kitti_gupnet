@@ -59,7 +59,7 @@ class GUPNet(nn.Module):
         # initialize the head of pipeline, according to heads setting.
         self.heatmap = nn.Sequential(nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
                                      nn.ReLU(inplace=True),
-                                     nn.Conv2d(self.head_conv, 3, kernel_size=1, stride=1, padding=0, bias=True))
+                                     nn.Conv2d(self.head_conv, 1, kernel_size=1, stride=1, padding=0, bias=True))
         self.offset_2d = nn.Sequential(nn.Conv2d(channels[self.first_level], self.head_conv, kernel_size=3, padding=1, bias=True),
                                      nn.ReLU(inplace=True),
                                      nn.Conv2d(self.head_conv, 2, kernel_size=1, stride=1, padding=0, bias=True))
@@ -110,6 +110,7 @@ class GUPNet(nn.Module):
         ret['heatmap']=self.heatmap(feat)
         ret['offset_2d']=self.offset_2d(feat)
         ret['size_2d']=self.size_2d(feat)
+
         #two stage
         assert(mode in ['train','val','test'])
         if mode=='train':   #extract train structure in the train (only) and the val mode
@@ -128,11 +129,11 @@ class GUPNet(nn.Module):
         res = {}
         if num_masked_bin!=0:
             #get box2d of each roi region
-            box2d_masked = extract_input_from_tensor(box2d_maps,inds,mask)
+            box2d_masked = extract_input_from_tensor(box2d_maps,inds,mask) #->(B*K, 5) 5 is (1->B, top_left, buttom_left) 
             #get roi feature
-            roi_feature_masked = roi_align(feat,box2d_masked,[7,7])
+            roi_feature_masked = roi_align(feat,box2d_masked,[7,7])#->(B*K, 64, 7, 7)
             #get coord range of each roi
-            coord_ranges_mask2d = coord_ranges[box2d_masked[:,0].long()]
+            coord_ranges_mask2d = coord_ranges[box2d_masked[:,0].long()] # ->(400,2,2) (2,2) means the image origin size
 
             #map box2d coordinate from feature map size domain to original image size domain
             box2d_masked = torch.cat([box2d_masked[:,0:1],
@@ -140,10 +141,13 @@ class GUPNet(nn.Module):
                        box2d_masked[:,2:3]/HEIGHT*(coord_ranges_mask2d[:,1,1:2]-coord_ranges_mask2d[:,0,1:2])+coord_ranges_mask2d[:,0,1:2],
                        box2d_masked[:,3:4]/WIDE  *(coord_ranges_mask2d[:,1,0:1]-coord_ranges_mask2d[:,0,0:1])+coord_ranges_mask2d[:,0,0:1],
                        box2d_masked[:,4:5]/HEIGHT*(coord_ranges_mask2d[:,1,1:2]-coord_ranges_mask2d[:,0,1:2])+coord_ranges_mask2d[:,0,1:2]],1)
-            roi_calibs = calibs[box2d_masked[:,0].long()]
-            #project the coordinate in the normal image to the camera coord by calibs
+            #concate 2d box 4 corner shape:(400,5) box2d_masked to the origin image size
+
+            roi_calibs = calibs[box2d_masked[:,0].long()] #get each sample camera projection matrix
+            #project the coordinate in the normal image to the camera coord by calibs 左上跟右下角project to camera coordinate
             coords_in_camera_coord = torch.cat([self.project2rect(roi_calibs,torch.cat([box2d_masked[:,1:3],torch.ones([num_masked_bin,1]).to(device_id)],-1))[:,:2],
                                           self.project2rect(roi_calibs,torch.cat([box2d_masked[:,3:5],torch.ones([num_masked_bin,1]).to(device_id)],-1))[:,:2]],-1)
+            
             coords_in_camera_coord = torch.cat([box2d_masked[:,0:1],coords_in_camera_coord],-1)
             #generate coord maps
             coord_maps = torch.cat([torch.cat([coords_in_camera_coord[:,1:2]+i*(coords_in_camera_coord[:,3:4]-coords_in_camera_coord[:,1:2])/6 for i in range(7)],-1).unsqueeze(1).repeat([1,7,1]).unsqueeze(1),
@@ -153,7 +157,7 @@ class GUPNet(nn.Module):
             cls_hots = torch.zeros(num_masked_bin,self.cls_num).to(device_id)
             cls_hots[torch.arange(num_masked_bin).to(device_id),cls_ids[mask].long()] = 1.0
             
-            roi_feature_masked = torch.cat([roi_feature_masked,coord_maps,cls_hots.unsqueeze(-1).unsqueeze(-1).repeat([1,1,7,7])],1)
+            roi_feature_masked = torch.cat([roi_feature_masked,coord_maps,cls_hots.unsqueeze(-1).unsqueeze(-1).repeat([1,1,7,7])],1).float()
  
             #compute heights of projected objects
             box2d_height = torch.clamp(box2d_masked[:,4]-box2d_masked[:,2],min=1.0)

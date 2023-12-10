@@ -37,7 +37,7 @@ class Trainer(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.class_name = test_loader.dataset.class_name
         self.save_dir= cfg['trainer']['save_dir']
-        self.writer = SummaryWriter(log_dir = "runs/" + datetime.now().strftime("%Y%m%d-%H%M%S") + "/")
+        self.writer = SummaryWriter(log_dir = "runs/" + datetime.now().strftime("%Y%m%d-%H%M%S") + "/"+self.save_dir)
         
         if self.cfg_train.get('resume_model', None):
             assert os.path.exists(self.cfg_train['resume_model'])
@@ -49,6 +49,7 @@ class Trainer(object):
 
     def train(self):
         start_epoch = self.epoch
+        progress_bar = tqdm.tqdm(total=self.cfg_train['max_epoch']- start_epoch, leave=True, desc='total epoch state')
         ei_loss = self.compute_e0_loss()
         loss_weightor = Hierarchical_Task_Learning(ei_loss)
         for epoch in range(start_epoch, self.cfg_train['max_epoch']):
@@ -68,7 +69,7 @@ class Trainer(object):
                 log_str += ' %s:%.4f,' %(key[:-4], loss_weights[key])   
             self.logger.info(log_str)                     
             ei_loss = self.train_one_epoch(loss_weights)
-             # self.writer.add_scalar('loss/total_loss',ei_loss['total_loss'].item(),epoch)
+            #  self.writer.add_scalar('loss/total_loss',ei_loss['total_loss'].item(),epoch)
             self.writer.add_scalar('loss/seg_loss', ei_loss['seg_loss'].item(), epoch)
             self.writer.add_scalar('loss/offset2d_loss', ei_loss['offset2d_loss'].item(), epoch)
             self.writer.add_scalar('loss/size_loss', ei_loss['size2d_loss'].item(), epoch)
@@ -76,6 +77,7 @@ class Trainer(object):
             self.writer.add_scalar('loss/depth_loss', ei_loss['depth_loss'].item(), epoch)
             self.writer.add_scalar('loss/size3d_loss', ei_loss['size3d_loss'].item(), epoch)
             self.writer.add_scalar('loss/heading_loss', ei_loss['heading_loss'].item(), epoch)
+            self.writer.add_scalar('loss/project_loss', ei_loss['project_loss'].item(), epoch)
             self.epoch += 1 
             
             # update learning rate
@@ -128,6 +130,7 @@ class Trainer(object):
         self.model.train()
         disp_dict = {}
         stat_dict = {}
+        progress_bar = tqdm.tqdm(total=len(self.train_loader), leave=True, desc='training per epoch Progress')
         for batch_idx, (inputs,calibs,coord_ranges, targets, info) in enumerate(self.train_loader):
             inputs = inputs.to(self.device)
             calibs = calibs.to(self.device)
@@ -165,7 +168,8 @@ class Trainer(object):
                     log_str += ' %s:%.4f,' %(key, disp_dict[key])
                     disp_dict[key] = 0  # reset statistics
                 self.logger.info(log_str)
-                
+            progress_bar.update()
+            
         for key in stat_dict.keys():
             stat_dict[key] /= trained_batch
                             

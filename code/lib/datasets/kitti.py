@@ -15,12 +15,13 @@ from lib.datasets.kitti_utils import Calibration
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
 from lib.datasets.kitti_utils import compute_box_3d
+from lib.datasets.kitti_utils import compute_projection_2dbox
 import pdb
 
 class KITTI(data.Dataset):
     def __init__(self, root_dir, split, cfg):
         # basic configuration
-        self.num_classes = 3
+        self.num_classes = 1
         self.max_objs = 50
         # self.class_name = ['Pedestrian', 'Car', 'Cyclist']
         self.class_name = ['Car']
@@ -57,8 +58,8 @@ class KITTI(data.Dataset):
         self.label_dir = os.path.join(self.data_dir, 'label_2')
 
         # data augmentation configuration
-        # self.data_augmentation = True if split in ['train', 'trainval'] else False
-        self.data_augmentation = False
+        self.data_augmentation = True if split in ['train', 'trainval'] else False
+        # self.data_augmentation = False
         self.random_flip = cfg['random_flip']
         self.random_crop = cfg['random_crop']
         self.scale = cfg['scale']
@@ -114,11 +115,12 @@ class KITTI(data.Dataset):
                 center[1] += img_size[1] * np.clip(np.random.randn() * self.shift, -2 * self.shift, 2 * self.shift)
 
         # add affine transformation for 2d images.
-        # trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
-        # img = img.transform(tuple(self.resolution.tolist()),
-        #                     method=Image.AFFINE,
-        #                     data=tuple(trans_inv.reshape(-1).tolist()),
-        #                     resample=Image.BILINEAR)
+        trans, trans_inv = get_affine_transform(center, crop_size, 0, self.resolution, inv=1)
+        
+        img = img.transform(tuple(self.resolution.tolist()),
+                            method=Image.AFFINE,
+                            data=tuple(trans_inv.reshape(-1).tolist()),
+                            resample=Image.BILINEAR)
         coord_range = np.array([center-crop_size/2,center+crop_size/2]).astype(np.float32)                   
         # image encoding
         img=img.resize(self.resolution)
@@ -156,6 +158,14 @@ class KITTI(data.Dataset):
             indices = np.zeros((self.max_objs), dtype=np.int64)
             mask_2d = np.zeros((self.max_objs), dtype=np.uint8)
             mask_3d = np.zeros((self.max_objs), dtype=np.uint8)
+
+            calib_set = np.zeros((self.max_objs,3,4),dtype = np.float64)
+            r_y = np.zeros((self.max_objs,1), dtype=np.float64) 
+            pos_3d= np.zeros((self.max_objs,3),dtype= np.float64)
+            project_2d_box =np.zeros((self.max_objs,4),dtype=np.int64)# use for projection loss
+            # center_set =np.zeros((self.max_objs,2),dtype=np.float32)#use for projection loss
+            trans_set = np.zeros((self.max_objs , 2, 3), dtype= np.float64)
+            trans_inv_set = np.zeros((self.max_objs , 2, 3), dtype= np.float64)
             object_num = len(objects) if len(objects) < self.max_objs else self.max_objs
             for i in range(object_num):
                 # filter objects by writelist
@@ -169,8 +179,9 @@ class KITTI(data.Dataset):
                 # process 2d bbox & get 2d center
                 bbox_2d = objects[i].box2d.copy()
                 # add affine transformation for 2d boxes.
-                # bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
-                # bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
+                bbox_2d[:2] = affine_transform(bbox_2d[:2], trans)
+                bbox_2d[2:] = affine_transform(bbox_2d[2:], trans)
+                
                 # modify the 2d bbox according to pre-compute downsample ratio
                 bbox_2d[:] /= self.downsample
     
@@ -180,9 +191,12 @@ class KITTI(data.Dataset):
                 center_3d = center_3d.reshape(-1, 3)  # shape adjustment (N, 3)
                 center_3d, _ = calib.rect_to_img(center_3d)  # project 3D center to image plane
                 center_3d = center_3d[0]  # shape adjustment
-                # center_3d = affine_transform(center_3d.reshape(-1), trans)
+                center_3d = affine_transform(center_3d.reshape(-1), trans)
+                # projected_3d_pos = calib.img_to_rect(center_3d[0], center_3d[1], objects[i].pos[-1]).reshape(-1)
                 center_3d /= self.downsample      
-            
+                # center_set[i]=center_3d #似乎可以不用
+                pos_3d[i] = objects[i].pos
+                
                 # generate the center of gaussian heatmap [optional: 3d center or 2d center]
                 center_heatmap = center_3d.astype(np.int32) if self.use_3d_center else center_2d.astype(np.int32)
                 if center_heatmap[0] < 0 or center_heatmap[0] >= features_size[0]: continue
@@ -198,6 +212,8 @@ class KITTI(data.Dataset):
                     continue
     
                 cls_id = self.cls2id[objects[i].cls_type]
+                # assert(cls_id==0),"img_index is: "+str(index)+",cls_id: "+str(cls_id)+"objects[i].cls_type"+str(objects[i].cls_type)
+                    
                 cls_ids[i] = cls_id
                 draw_umich_gaussian(heatmap[cls_id], center_heatmap, radius)
     
@@ -210,18 +226,36 @@ class KITTI(data.Dataset):
                 depth[i] = objects[i].pos[-1]
     
                 # encoding heading angle
-                #heading_angle = objects[i].alpha
+                #heading_angle = objects[i].alpha #因為圖像經過affine 後其alpha 會變因此不能直接拿來用
+                r_y[i] = objects[i].ry  
                 heading_angle = calib.ry2alpha(objects[i].ry, (objects[i].box2d[0]+objects[i].box2d[2])/2)
                 if heading_angle > np.pi:  heading_angle -= 2 * np.pi  # check range
                 if heading_angle < -np.pi: heading_angle += 2 * np.pi
                 heading_bin[i], heading_res[i] = angle2class(heading_angle)
-    
+                # 這個目前沒有考慮超過圖像框框的
+                # maxnumpy= compute_projection_2dbox(objects[i].h, objects[i].w, objects[i].l, *objects[i].pos, objects[i].ry, calib) #計算3d project 2d bounding box
+                # affine_maxnumpy = np.array(maxnumpy)
+                # affine_maxnumpy[:2] = affine_transform(affine_maxnumpy[:2], trans)
+                # affine_maxnumpy[2:] = affine_transform(affine_maxnumpy[2:], trans)
+                # lower_bounds = [0, 0, 0, 0]
+                # upper_bounds = [1280, 384, 1280, 384]
+                # affine_maxnumpy[:4] = np.clip(affine_maxnumpy[:4], lower_bounds, upper_bounds)
+
+                # project_2d_box[i] = affine_maxnumpy
+
+                project_2d_box[i] =bbox_2d[:]*self.downsample 
                 # encoding 3d offset & size_3d
                 offset_3d[i] = center_3d - center_heatmap
                 src_size_3d[i] = np.array([objects[i].h, objects[i].w, objects[i].l], dtype=np.float32)
                 mean_size = self.cls_mean_size[self.cls2id[objects[i].cls_type]]
                 size_3d[i] = src_size_3d[i] - mean_size
 
+               
+                affine_calibmatrix =calib.affine_transform(img_size,trans)
+                calib_set[i] = affine_calibmatrix
+                
+                trans_set[i]= trans
+                trans_inv_set[i] = trans_inv
                 #objects[i].trucation <=0.5 and objects[i].occlusion<=2 and (objects[i].box2d[3]-objects[i].box2d[1])>=25:
                 if objects[i].trucation <=0.5 and objects[i].occlusion<=2:    
                     mask_2d[i] = 1           
@@ -235,7 +269,14 @@ class KITTI(data.Dataset):
                    'heading_bin': heading_bin,
                    'heading_res': heading_res,
                    'cls_ids': cls_ids,
-                   'mask_2d': mask_2d} 
+                   'mask_2d': mask_2d,
+                    'r_y': r_y,
+                #    'center_set':center_set,
+                   'project_2d_box': project_2d_box,
+                   'pos_3d':pos_3d,
+                   'trans':trans_set,
+                   'trans_inv_set':trans_inv_set,
+                   'calib_set':calib_set} 
         else:
             targets = {}
         # collect return data
